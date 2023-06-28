@@ -1,0 +1,153 @@
+---
+title: "Class Survey Project"
+author: "ss4230@scarletmail.rutgers.edu"
+date: "2023-04-23"
+output: html_document
+---
+```{r}
+library(readr)
+library(corrplot)
+library(ggplot2)
+library(factoextra)
+library(FactoMineR)
+library(ggfortify)
+library(psych)
+library(corrplot)
+library(devtools)
+library(cowplot)
+library(regclass)
+library(caret)
+library(e1071)
+library(pROC)
+library(ROCR)
+library(caTools)
+library(NbClust)
+library(cluster)
+
+#Reading Dataset
+class <- read.csv("C:/Users/Shruti Sontakke/Downloads/class.csv")
+colnames(class) <- c("student","week","whatsapp","instagram","snapchat","telegram","facebook","bereal","tiktok","wechat","twitter","linkedin","messages","screentime","count","addiction")
+str(class)
+
+#Data Preparation
+class$week <- NULL
+class$student <- NULL
+class$count <- NULL
+class$screentime <- NULL
+
+str(class)
+#Scaling the data and Checking Correlation
+scaled_class <- scale(class[-12])
+correlation <- cor(scaled_class)
+corrplot(correlation)
+#Here we see correlation between WeChat and TikTok
+```
+
+
+```{r}
+##Principle Component Analysis
+class$addiction <- as.factor(class$addiction)
+class_pca <- prcomp(correlation)
+class_pca
+summary(class_pca)
+#PC1 shows 36% variance, PC2 shows 19% variance.
+#Cumulative Proportion section, the first four principal component explains almost 59% of the total variance. 
+
+fviz_eig(class_pca, addlabels = TRUE)
+#This plot shows the eigenvalues in a downward curve, from highest to lowest. 
+# First 2 components can be considered to be the most significant since they contain almost 60% of the total information of the data.
+#Since PC1 and PC2 together are below 70%, we will check EFA
+```
+
+```{r}
+#Exploratory Factor Analysis
+fit.pc <- principal(class[-12], nfactors=5, rotate="varimax")
+fit.pc
+fa.plot(fit.pc)
+fa.diagram(fit.pc)
+#From this diagram we can consider RC1, RC3 and R4
+fit.pc$loadings
+head(fit.pc$scores)
+#RC2 has the highest factor loading of 0.269, followed by RC5 −0.138 and RC1 −0.152
+#RC3 and RC4 have negative loadings. 
+#This suggests that the variables associated with RC2 may be more strongly related to the underlying factor than the variables associated with RC3 and RC4.
+```
+
+```{r}
+## Clustering
+library(magrittr)
+#Distance matrix
+dist.class <- get_dist(scaled_class, stand = TRUE, method = "euclidean")
+#Kmeans Clustering
+fviz_dist(dist.class, show_labels = F)
+nb <- NbClust(scaled_class, distance = "euclidean", min.nc = 2,
+              max.nc = 10, method = "kmeans")
+#According to the majority rule, the best number of clusters is  5 
+
+#Visualizing with 5 clusters
+km_data <- kmeans(scaled_class, centers = 5, nstart = 35)
+fviz_cluster(list(data=scaled_class, clusters=km_data$cluster))
+#5 clusters are overlaping, so we check it with 3 clusters
+
+#Visualizing with 3 clusters
+km_data1 <- kmeans(scaled_class, centers = 3, nstart = 35)
+fviz_cluster(list(data=scaled_class, clusters=km_data1$cluster))
+#3 clusters gave a better result.There is less overlapping between the clusters.
+
+#Quality of clusters
+set.seed(123)
+# Enhanced hierarchical clustering, cut in 3 groups
+res.hc <- class[, -12] %>% scale() %>%
+  eclust("hclust", k = 3, graph = FALSE)
+
+# Visualize with factoextra
+fviz_dend(res.hc, palette = "jco",
+          rect = TRUE, show_labels = FALSE)
+fviz_silhouette(res.hc)
+#Cluster 1 indicates that observations here are well matched
+#Cluster 2 has the average sil widh less than cluster 1
+#Cluster 3 has highest average sil width, indicating that observations are well matched.
+```
+
+
+```{r}
+##Logistic Regression
+#Split the data in training and testing set
+# Set the seed for reproducibility
+set.seed(123) 
+trainIndex <- createDataPartition(class$addiction, p = 0.7, list = FALSE) # Split the data into 70% training and 30% testing
+training <- class[trainIndex, ]
+testing <- class[-trainIndex, ]
+nrow(class)
+nrow(training)
+nrow(testing)
+table(training$addiction)
+
+#Logistic Regression
+model <- glm(addiction~., data= training, family = binomial)
+summary(model)
+PredictTrain <- predict(model, newdata= testing, type = "response")
+summary(PredictTrain)
+
+#Confusion Matrix
+threshold <- 0.5 # Set the threshold for classification
+predicted_class <- ifelse(PredictTrain > threshold, 1, 0) # Convert probabilities to binary class
+actual_class <- testing$addiction # Extract the actual class labels
+predicted_class
+actual_class
+confusion_matrix <- table(predicted_class, actual_class)
+confusion_matrix
+#The confusion matrix indicates the accuracy to be 82% (18 + 24) / (18 + 6 + 4 + 24) = 0.82, or 82%
+
+#ROC curve
+rocObj <- roc(testing$addiction, PredictTrain)
+plot(rocObj, main = "ROC Curve", print.auc = TRUE)
+#The AUC value is 84.5%
+
+```
+
+
+
+
+
+
